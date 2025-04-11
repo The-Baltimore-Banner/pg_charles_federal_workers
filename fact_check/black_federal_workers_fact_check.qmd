@@ -1,0 +1,351 @@
+---
+title: "black federal workers"
+format: html
+editor: visual
+---
+
+# Setup
+
+```{r, setup = T}
+library(tidycensus)
+library(tigris)
+library(janitor)
+library(tidyverse)
+library(mapview)
+library(survey)
+source("functions/setup_functions.R")
+```
+
+# Fact-check
+
+Charles and Prince George’s counties, Maryland neighbors with intertwined histories, are the nation’s richest majority-Black counties, with median household incomes that exceed \$100,000. Nowhere else comes close.
+
+```{r, warning = F, echo = F, message = F}
+
+# You will need a tidycensus API Key
+
+# load data on race + fedeal employment + income from census
+us_counties_feds <- 
+  get_acs(
+  # load at the county level
+  geography = "county",
+  # we want 5-year-ACS from 2023
+  survey = "acs5",
+  year = 2023,
+  variables = c("B24080_009", # fed workers (men)
+                "B24080_019", # fed workers (women)
+                "B24080_001", # total workers 
+                "B19013_001", # median hh income 
+                "B02001_001", # total pop (race)
+                "B02001_003", # Black or AA alone
+                "B02001_002", # white alone
+                "B02001_008"
+                ),
+  output = "wide",
+  geometry = T) %>% 
+  rename(
+    fed_men = B24080_009E,
+    fed_women = B24080_019E,
+    tot_workers = B24080_001E,
+    median_hh_income = B19013_001E,
+    total_pop = B02001_001E,
+    black_aa = B02001_003E,
+    white_pop = B02001_002E,
+    two_or_more_races_pop = B02001_008E
+  ) %>% 
+  mutate(
+    # total federal workers
+    fed_tot = fed_men + fed_women,
+    # federal workers as a percentage of all workers 
+    fed_pct = fed_tot / tot_workers * 100,
+    # Black population %
+    black_pct = black_aa / (total_pop - two_or_more_races_pop) * 100,
+    # white population %
+    white_pct = white_pop / (total_pop - two_or_more_races_pop) * 100,
+    # Two or more population %
+    two_or_more_pct = two_or_more_races_pop / total_pop * 100
+         ) %>% 
+  select(GEOID, 
+         NAME, 
+         fed_tot,
+         tot_workers, 
+         fed_pct,
+         black_pct,
+         white_pct,
+         two_or_more_pct,
+         median_hh_income) %>% 
+    mutate(is_maryland = str_detect(NAME, ", Maryland"),
+         is_pg_charles = str_detect(NAME, "Prince George's County, Maryland|Charles County, Maryland")) 
+
+
+# all majority-Black counties
+us_counties_feds %>% 
+  filter(black_pct >= 50) %>%
+  # ggplot(aes(y = median_hh_income, x = black_pct)) +
+  # geom_point(aes(color = is_maryland)) 
+  # geom_smooth()
+  mapview(zcol = "median_hh_income")
+
+## table 
+us_counties_feds %>% 
+  filter(black_pct >= 50) %>% 
+  st_drop_geometry() %>% 
+  as.data.frame() %>% 
+  arrange(desc(median_hh_income)) %>% 
+  ggplot(aes(y = fed_pct, x = median_hh_income, size = tot_workers, color = is_pg_charles)) +
+  geom_point() +
+  theme_minimal()
+
+
+
+
+  
+
+
+```
+
+More than 1 in 8 of workers across the two counties is employed by the federal government. For Black workers, it’s about 1 in 5 – double the statewide average, a Banner analysis of individual-level U.S. Census data shows.
+
+```{r, warning = F, echo = F, message = F}
+fed_prop_black_pg_charles <- 
+  svymean(~classwkrd_lbl, black_pg_charles_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " (PG & Charles - Black workers)"))
+
+fed_prop_non_black_pg_charles <- 
+  svymean(~classwkrd_lbl, non_black_pg_charles_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " (PG & Charles - Non-Black workers)")) 
+
+fed_prop_pg_charles <- 
+  svymean(~classwkrd_lbl, pg_charles_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " (PG & Charles)")) 
+  
+
+fed_prop_md <- 
+  svymean(~classwkrd_lbl, md_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " (All MD)")) 
+  
+fed_prop_black_md <- 
+  svymean(~classwkrd_lbl, black_md_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " (All MD - Black workers)")) 
+
+fed_prop_bmore <- 
+  svymean(~classwkrd_lbl, bmore_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " Baltimore + county")) 
+
+fed_prop_non_black_bmore <- 
+  svymean(~classwkrd_lbl, non_black_bmore_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " Baltimore + county - Non-Black workers")) 
+
+
+
+
+fed_prop_black_bmore <- 
+  svymean(~classwkrd_lbl, black_bmore_survey) %>% 
+  as.data.frame() %>% 
+  mutate(category = rownames(.)) %>% 
+  tibble() %>% 
+  mutate(category = gsub("classwkrd_lbl", "", category)) %>% 
+  select(category, everything()) %>% 
+  ungroup() %>% 
+  mutate(category = str_c(category, " Baltimore + county - Black workers")) 
+  
+
+# viz it up
+fed_prop_comparison <- 
+  fed_prop_black_pg_charles %>% 
+  full_join(fed_prop_non_black_pg_charles) %>% 
+  full_join(fed_prop_md) %>% 
+  full_join(fed_prop_pg_charles) %>% 
+  full_join(fed_prop_black_bmore) %>%
+  full_join(fed_prop_non_black_bmore) %>% 
+  filter(str_detect(category, "Federal govt employee")) %>% 
+  arrange(desc(mean))
+
+fed_prop_comparison %>% 
+  ggplot(
+        aes(x = reorder(category, -mean), y = mean, fill = category)
+  ) +
+  geom_col() +
+  theme_minimal() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()
+  ) 
+
+fed_prop_comparison %>% 
+  mutate(
+    mean = mean * 100,
+    SE = SE * 100
+         ) %>% 
+  select(-SE) %>% 
+  kbl() %>% 
+  kable_material_dark()
+
+
+```
+
+Unlike in other communities, federal employment is the main determinant of income status in Maryland’s Black neighborhoods. Here, each 1% jump in workers employed by the federal government adds about \$3,300 in median household income.
+
+```{r, warning = F, echo = F, message = F}
+maj_black_tracts %>% 
+  mutate(fed_pct = fed_pct / 100) %>% 
+  ggplot((aes(x = median_hh_income, y = fed_pct))) +
+  geom_point(color = "#267DFF") +
+  geom_smooth(method = "lm", color = "#FF4019") +
+  labs(
+    title = "% of Federal workers vs. Median household income in Majority-Black Census Tracts",
+    subtitle = "Every 1% of federal workers in a tract explains about $3300 in household income"
+  ) +
+  xlab("Median household income") +
+  ylab("% federal workers") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  theme_minimal()
+
+# regression 
+maj_black_linear_regression <- lm(median_hh_income ~ fed_pct, data = maj_black_tracts) %>%
+  summary()
+
+maj_black_linear_regression
+
+```
+
+When Franklin D. Roosevelt integrated the federal workforce through executive order in 1941, Prince George’s County was over 80% white and mostly rural.
+
+```{r}
+census_design <- svydesign(
+  ids = ~0,
+  weights = ~PERWT,   # Person weight variable
+  data = pg_micro_data_clean_1940
+)
+
+
+# Create a weighted contingency table of race by county
+race_table <- svytable(~race_lbl, design = census_design)
+
+race_table %>% 
+  as.data.frame() %>% 
+  kbl() %>% 
+  kable_material_dark()
+
+# Convert to percentages (within each county)
+race_percentages <- prop.table(race_table) * 100
+
+race_percentages %>% 
+  as.data.frame() %>% 
+  kbl() %>% 
+  kable_material_dark()
+
+
+```
+
+Today, over 70% of full-time Black workers in Prince George’s County are homeowners, nearly twice the rate of Black Americans as a whole.
+
+```{r}
+black_pg_charles_survey_homeownership <- svy_design_function(pg_charles_analysis %>% filter(OWNERSHP != 0) %>% filter(UHRSWORK >= 40))
+
+
+homeownership_by_fedstatus <-
+  svymean(
+  ~I(ownershp_lbl),  # Owned home indicator
+  # ~I(is_federal),  # Federal worker indicator
+  design = black_pg_charles_survey_homeownership,
+  FUN = svymean,
+  na.rm = TRUE
+  ) %>% 
+  as.data.frame() %>% 
+  mutate(ownership = rownames(.)) %>% 
+  select(ownership, everything()) %>% 
+  clean_names() %>% 
+  mutate(
+    ownership = str_remove(ownership, "^I\\(ownershp_lbl\\)")
+  ) 
+
+rownames(homeownership_by_fedstatus) <- 1:nrow(homeownership_by_fedstatus)
+
+
+
+homeownership_by_fedstatus %>% 
+  kbl() %>% 
+  kable_material_dark()
+
+
+```
+
+Federal employment has also been a gateway into the middle class for Black workers without college degrees, who earn median incomes more than \$30,000 higher than other Black non-college educated workers.
+
+```{r}
+black_pg_charles_survey_full_time_non_college <- svy_design_function(black_pg_charles_analysis %>% filter(UHRSWORK >= 40) %>% filter(EDUC < 10))
+
+black_pg_charles_inc_quantile_fedstatus_non_college <- svyby(
+  ~I(INCWAGE),  # Owned home indicator
+  ~I(is_federal),  # Federal worker indicator
+  design = black_pg_charles_survey_full_time_non_college ,
+  FUN = svyquantile,                      
+  quantiles = c(0.25, 0.5, 0.75),
+  na.rm = TRUE
+  ) %>% 
+  rename_with(
+    ~gsub("I\\(INCWAGE\\)\\.", "", .), 
+    starts_with("I(INCWAGE)")
+  ) %>% 
+  select(-starts_with("se")) %>% 
+  tibble() %>% 
+  rename(is_federal = "I(is_federal)")
+
+black_pg_charles_inc_quantile_fedstatus_non_college %>% 
+  kbl() %>% 
+  kable_material_dark()
+
+black_pg_charles_inc_quantile_fedstatus_non_college %>% 
+    pivot_longer(
+    cols = c("0.25", "0.5", "0.75"),
+    names_to = "quantile",
+    values_to = "income"
+  ) %>% 
+  ggplot(aes(x = quantile, y = income, fill = quantile)) +
+  geom_col()+
+  facet_wrap(~is_federal)
+```
