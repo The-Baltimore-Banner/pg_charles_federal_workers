@@ -1,4 +1,4 @@
-# PG Charles federal workers 
+# Trump’s federal worker cuts are destabilizing the nation’s two wealthiest Black counties
 
 ### by [Greg Morton](mailto:greg.morton@thebaltimorebanner.com)
 
